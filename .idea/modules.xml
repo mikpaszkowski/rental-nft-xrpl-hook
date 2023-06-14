@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/xrpl-rental-hooks.iml" filepath="$PROJECT_DIR$/.idea/xrpl-rental-hooks.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/xrpl_rental_hooks.iml" filepath="$PROJECT_DIR$/.idea/xrpl_rental_hooks.iml" />
+    </modules>
+  </component>
+</project>
