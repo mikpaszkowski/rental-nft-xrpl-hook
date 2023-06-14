@@ -1,3 +1,0 @@
-/Users/mikolajpaszkowski/Documents/projects/xrpl-rental-hooks/cmake-build-debug/CMakeFiles/xrpl_rental_hooks.dir
-/Users/mikolajpaszkowski/Documents/projects/xrpl-rental-hooks/cmake-build-debug/CMakeFiles/edit_cache.dir
-/Users/mikolajpaszkowski/Documents/projects/xrpl-rental-hooks/cmake-build-debug/CMakeFiles/rebuild_cache.dir
