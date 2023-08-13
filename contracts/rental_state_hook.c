@@ -5,11 +5,23 @@
 #define MAX_MEMO_SIZE 4096
 #define MEMO_DATA_LENGTH 64
 
-#define COPY_BUFM(lhsbuf, lhsbuf_spos, rhsbuf, rhsbuf_spos, len, n) \
-    for (int i = 0; GUARDM(len, n), i < len; ++i)                   \
+#define COPY_BUFM(lhsbuf, lhsbuf_spos, rhsbuf, rhsbuf_spos, n, len) \
+    for (int i = 0; GUARD(n), i < len; ++i)                   \
         lhsbuf[lhsbuf_spos + i] = rhsbuf[rhsbuf_spos + i];
 
-int64_t hook(uint32_t reserved) {
+
+int64_t cbak(uint32_t ctx)
+{
+    TRACESTR("Callback called.");
+    if(ctx == 0) {
+        TRACESTR("Payment tx was successfully accepted into a ledger");
+    } else {
+        TRACESTR("Payment tx was not successfully accepted into a ledger");
+    }
+    return 0;
+}
+
+int64_t hook(uint32_t ctx) {
 
     TRACESTR("HOOK FIRED")
 
@@ -33,13 +45,14 @@ int64_t hook(uint32_t reserved) {
     //READING VARIABLES FROM STATE, TX and HOOKS CONTEXT to be used further
 
     uint32_t NUM_OF_RENTALS[1];
-    TRACEVAR(NUM_OF_RENTALS[0]);
     int64_t NUM_OF_RENTALS_LOOKUP = state(SBUF(NUM_OF_RENTALS), SBUF(RENTAL_IN_PROGRESS_AMOUNT_KEY));
+    TRACEVAR(NUM_OF_RENTALS[0]);
 
     uint8_t URITOKEN_TX[32];
     int64_t URITOKEN_TX_LOOKUP = otxn_field((uint32_t) (uintptr_t) URITOKEN_TX, 32, sfURITokenID);
+    TRACEHEX(URITOKEN_TX);
 
-    int8_t URITOKEN_STORE[32];
+    int8_t URITOKEN_STORE[34];
     int64_t URITOKEN_STORE_LOOKUP = state(SBUF(URITOKEN_STORE), SBUF(URITOKEN_TX));
     TRACEHEX(URITOKEN_STORE_LOOKUP);
     int64_t TX_TYPE = otxn_type();
@@ -50,34 +63,54 @@ int64_t hook(uint32_t reserved) {
     // potentially break the flow and lead to takeover of asset
 
     // check if incoming transaction is HOOK_SET or ACCOUNT_DELETE which are potentially "malicious" transactions
-    if (TX_TYPE == ttACCOUNT_DELETE || TX_TYPE == ttHOOK_SET) {
-        TRACESTR("Reading number of rentals in progress from state");
-        if (NUM_OF_RENTALS_LOOKUP > 0) {
-            rollback(SBUF("[ONGOING RENTALS]: cannot mutate hook or delete account"), 10);
-        } else if (NUM_OF_RENTALS_LOOKUP < 0) {
-            TRACESTR("No rentals on this account yet");
-        }
-        if (TX_TYPE == ttACCOUNT_DELETE) TRACESTR("[NO ONGOING RENTALS]: AccountDelete tx accepted");
-        if (TX_TYPE == ttACCOUNT_DELETE) TRACESTR("[NO ONGOING RENTALS]: SetHook tx accepted");
-        accept(SBUF("Tx accepted"), (uint64_t) (uintptr_t) 0);
-    }
+//    if (TX_TYPE == ttACCOUNT_DELETE || TX_TYPE == ttHOOK_SET) {
+//        TRACESTR("Reading number of rentals in progress from state");
+//        if (NUM_OF_RENTALS[0] > 0) {
+//            rollback(SBUF("[ONGOING RENTALS]: cannot mutate hook or delete account"), 10);
+//        } else if (NUM_OF_RENTALS[0] < 0) {
+//            TRACESTR("No rentals on this account yet");
+//        }
+//        if (TX_TYPE == ttACCOUNT_DELETE) TRACESTR("[NO ONGOING RENTALS]: AccountDelete tx accepted");
+//        if (TX_TYPE == ttACCOUNT_DELETE) TRACESTR("[NO ONGOING RENTALS]: SetHook tx accepted");
+//        accept(SBUF("Tx accepted"), (uint64_t) (uintptr_t) 0);
+//    }
 
     //reading URIToken
     TRACESTR("Reading URIToken from the incoming transaction ...")
     if (TX_TYPE == ttURITOKEN_BUY) {
-        uint8_t hook_acc_id[20];
-        int64_t bytes_written = hook_account(hook_acc_id, 20);
 
-        uint8_t tx_account_id[20];
-        uint64_t readAccountIdValLength = otxn_field(SBUF(tx_account_id), sfAccount);
+        TRACEVAR(NUM_OF_RENTALS[0]);
+        if(NUM_OF_RENTALS[0] > 0) {
+            TRACEVAR(NUM_OF_RENTALS[0])
+            TRACESTR("NUM_OF_RENTALS greater than 0");
+        }
+        TRACEVAR(URITOKEN_STORE_LOOKUP);
+        if(URITOKEN_STORE_LOOKUP == 32) {
+            TRACEVAR(URITOKEN_STORE_LOOKUP);
+            TRACESTR("URITOKEN_LOOKUP equals to 32");
+        }
 
-        uint8_t is_acc_ids_equal = 0;
-
-        BUFFER_EQUAL(is_acc_ids_equal, hook_acc_id, tx_account_id, 20);
-
-        //removal of URIToken only if hook's account did not fired the tx
-        if (URITOKEN_STORE_LOOKUP == 32 && !is_acc_ids_equal) {
-            state_set(0, 0, SBUF(URITOKEN_TX));
+        //removal of URIToken only if hook's account did not fired the tx -> owner accepted the return rental offer
+        if (URITOKEN_STORE_LOOKUP == 32 && NUM_OF_RENTALS[0] > 0) {
+            TRACESTR('URIToken should be removed from the store');
+            if (state_set(0, 0, SBUF(URITOKEN_TX)) < 0) {
+                TRACESTR("[INTERNAL HOOK STATE ERROR]: Could not remove the URIToken from the state");
+            }else {
+                TRACESTR("URIToken removed from the store");
+            }
+            TRACEVAR(NUM_OF_RENTALS[0])
+            if(NUM_OF_RENTALS[0] <= 0) {
+                NUM_OF_RENTALS[0] = 0;
+            }else {
+                NUM_OF_RENTALS[0]--;
+            }
+            TRACEVAR(NUM_OF_RENTALS[0]);
+            if (state_set(SBUF(NUM_OF_RENTALS), SBUF(RENTAL_IN_PROGRESS_AMOUNT_KEY)) < 0) {
+                TRACESTR("[INTERNAL HOOK STATE ERROR]: Could not decrement number of rentals in state")
+            }else {
+                TRACESTR("Num of rentals decremented");
+                accept(SBUF("Finish of rental process. Tx accepted"), (uint64_t) (uintptr_t) 0);
+            }
         }
     }
 
@@ -109,7 +142,7 @@ int64_t hook(uint32_t reserved) {
 
     **/
 
-    for (int i = 0; GUARD(3), i < 3 && memos_len > 0; i++) {
+    for (int i = 0; GUARD(3), i < 3; ++i) {
 
         TRACEVAR(i);
 
@@ -120,7 +153,7 @@ int64_t hook(uint32_t reserved) {
         if (memo_lookup < 0) {
             TRACESTR("Memo lookup empty");
         } else {
-            uint8_t* memo_ptr = SUB_OFFSET(memo_lookup) + memos;
+            uint8_t *memo_ptr = SUB_OFFSET(memo_lookup) + memos;
             uint32_t memo_len = SUB_LENGTH(memo_lookup);
 
             // memos are nested inside an actual memo object, so we need to subfield
@@ -172,6 +205,7 @@ int64_t hook(uint32_t reserved) {
         }
     }
 
+    TRACEHEX(rental_total_amount_ptr);
     //incoming tx treated as VALID if contain all valid MEMOS set of data
     //incoming tx treated as INVALID if all required MEMOS present but some of the data are invalid
 
@@ -191,6 +225,8 @@ int64_t hook(uint32_t reserved) {
 
         // ***** RENTAL CONTEXT INVALID *****
 
+        //probably non-rental incoming transaction
+
         if (URITOKEN_STORE_LOOKUP == 32) {
             TRACESTR("URIToken already present in the store");
             rollback(SBUF("[ONGOING RENTALS]: URIToken is already in ongoing rental process"), ERROR_URITOKEN_OCCUPIED);
@@ -201,10 +237,6 @@ int64_t hook(uint32_t reserved) {
     } else {
 
         // ***** RENTAL CONTEXT VALID *****
-
-        uint8_t rental_type_val[rental_type_len];
-        COPY_BUFM(rental_type_val, 0, rental_type_ptr, 0, MEMO_DATA_LENGTH, MEMO_DATA_LENGTH);
-        TRACEHEX(rental_type_val)
 
         if (TX_TYPE == ttURITOKEN_BUY) {
             if (state_set(SBUF(URITOKEN_TX), SBUF(URITOKEN_TX)) < 0) {
@@ -228,51 +260,53 @@ int64_t hook(uint32_t reserved) {
 
         //CHECK IF rental_type is valid
         if (!is_collateral_free && !is_collateral) {
-            TRACESTR("[MEMO VALIDATION ERROR]: invalid rental type")
+            TRACESTR("[MEMO VALIDATION ERROR]: Invalid rental type")
             INVALID_RENTAL_TYPE = 1;
         }
 
-        uint8_t foreignRenterURIToken[32] = {0};
+        uint8_t foreignRenterURIToken[32];
         int64_t foreignRenterURIToken_lookup = -1;
         if (TX_TYPE == ttURITOKEN_CREATE_SELL_OFFER) {
 
             //reading param from incoming transaction
-            uint8_t foreignRenterAccountNamespace[34];
-            uint8_t renterNS[] = {0x72U, 0x65U, 0x6EU, 0x74U, 0x65U, 0x72U, 0x4EU,
-                                  0x53U}; // Hexadecimal representation of "renterNS"
-            int64_t foreignRenterAccountNamespace_lookup = otxn_param((uint32_t) foreignRenterAccountNamespace, 34,
-                                                                      (uint32_t) renterNS, 8);
-            TRACEHEX(foreignRenterAccountNamespace);
+            uint8_t foreignAccountNS[32];
+            uint8_t ns_param_name[] = {'F', 'O', 'R', 'E', 'I', 'G', 'N', 'N', 'S'};
+            int64_t foreignRenterAccountNamespace_lookup = otxn_param(SBUF(foreignAccountNS), SBUF(ns_param_name));
+            TRACEHEX(foreignAccountNS);
 
-            uint8_t renterAccountId[34];
-            uint8_t renterAccId[] = {0x72U, 0x65U, 0x6EU, 0x74U, 0x65U, 0x72U, 0x41U, 0x63U, 0x63U, 0x49U,
-                                     0x64U}; // Hexadecimal representation of "renterAccId"
-            int64_t renterAccountId_lookup = otxn_param(SBUF(renterAccountId), (uint32_t) renterAccId, 11);
-            TRACEHEX(renterAccountId);
+            uint8_t foreignAcc[20];
+            uint8_t account_param_name[] = {'F', 'O', 'R', 'E', 'I', 'G', 'N', 'A', 'C', 'C'};
+            int64_t renterAccountId_lookup = otxn_param(SBUF(foreignAcc), SBUF(account_param_name));
+            TRACEHEX(foreignAcc);
 
-            if (foreignRenterAccountNamespace_lookup < 0 || renterAccountId_lookup < 0) {
-                TRACESTR("[TX REJECTED]: No provided hook parameters for \"renterNS\" or \"renterAccId\"");
+            if ((foreignRenterAccountNamespace_lookup < 0 || renterAccountId_lookup < 0) &&
+                URITOKEN_STORE_LOOKUP == 32) {
+                TRACESTR("[TX REJECTED]: No provided hook parameters for \"foreignAccountNS\" or \"foreignAcc\"");
                 rollback(SBUF("[TX REJECTED]: Hook parameter (renterNS or renterAccId) missing"),
                          ERROR_MISSING_HOOK_PARAM);
             }
 
             uint8_t SELL_OFFER_DESTINATION_ACC[20];
+            TRACESTR("BEFORE");
             int64_t SELL_OFFER_DESTINATION_ACC_LOOKUP = otxn_field(SBUF(SELL_OFFER_DESTINATION_ACC), sfDestination);
+            TRACEHEX(SELL_OFFER_DESTINATION_ACC);
+            TRACEHEX(SELL_OFFER_DESTINATION_ACC_LOOKUP);
             if (SELL_OFFER_DESTINATION_ACC_LOOKUP < 0) {
                 TRACESTR("[TX REJECTED]: Destination field is required in URITokenCreateSellOffer");
                 rollback(SBUF("[TX REJECTED]: URITokenCreateSellOffer tx is not complete: missing Destination"),
                          ERROR_MISSING_DESTINATION_ACC);
             }
             foreignRenterURIToken_lookup = state_foreign(SBUF(foreignRenterURIToken), SBUF(URITOKEN_TX),
-                                                         SBUF(foreignRenterAccountNamespace),
-                                                         SBUF(SELL_OFFER_DESTINATION_ACC));
+                                                         SBUF(foreignAccountNS),
+                                                         SBUF(foreignAcc));
             TRACEHEX(foreignRenterURIToken_lookup);
+            TRACEHEX(foreignRenterURIToken);
         }
 
         //CHECK IF deadline_time is valid
 
         uint8_t rental_deadline_time_val[rental_deadline_len];
-        COPY_BUFM(rental_deadline_time_val, 0, rental_deadline_ptr, 0, MEMO_DATA_LENGTH, MEMO_DATA_LENGTH);
+        COPY_BUFM(rental_deadline_time_val, 0, rental_deadline_ptr, 0, MEMO_DATA_LENGTH, rental_deadline_len);
         TRACEHEX(rental_deadline_time_val)
 
         int64_t LEDGER_LAST_TIME_TS = ledger_last_time() + UNIX_TIMESTAMP_OFFSET;
@@ -283,15 +317,18 @@ int64_t hook(uint32_t reserved) {
         // rental_deadline_time is INVALID ONLY IF smaller than one minimum rental period (day) OR the foreign account does not have
         // this URIToken in the internal state (if present that means the URIToken is in na ongoing rental and the tx can be to return the URIToken)
         int64_t MIN_DEADLINE_TIMESTAMP = LEDGER_LAST_TIME_TS + LAST_CLOSED_LEDGER_BUFF + DAY_IN_SECONDS;
+        TRACEVAR(MIN_DEADLINE_TIMESTAMP);
 //        deadline time treated as invalid only if less than min acceptable period and foreign account does not have that URI what means then it is a create lend offer
 //          where deadline time must
+        TRACEVAR(foreignRenterURIToken_lookup)
         if (deadline_val < MIN_DEADLINE_TIMESTAMP && foreignRenterURIToken_lookup < 0) {
             INVALID_DEADLINE_TIME = 1;
         }
 
         //CHECKING IF rental_total_amount is valid
         uint8_t rental_total_amount_val[rental_total_amount_len];
-        COPY_BUFM(rental_total_amount_val, 0, rental_total_amount_ptr, 0, MEMO_DATA_LENGTH, MEMO_DATA_LENGTH);
+        TRACEHEX(rental_total_amount_ptr)
+        COPY_BUFM(rental_total_amount_val, 0, rental_total_amount_ptr, 0, MEMO_DATA_LENGTH, rental_total_amount_len);
         TRACEHEX(rental_total_amount_val)
 
         int64_t total_amount_val = float_int(*((int64_t *) rental_total_amount_val), 0, 1);
@@ -305,22 +342,30 @@ int64_t hook(uint32_t reserved) {
             TRACESTR("[TX REJECTED]: Invalid rental memo data");
             rollback(SBUF("[TX REJECTED]: Invalid rental tx memos"), ERROR_INVALID_TX_MEMOS);
         } else {
-            if (URITOKEN_STORE_LOOKUP == 32 && foreignRenterURIToken_lookup < 0) {
-                TRACESTR("URIToken already present in the store");
-                rollback(SBUF("[ONGOING RENTALS]: URIToken is already in ongoing rental process"),
-                         ERROR_URITOKEN_OCCUPIED);
+            if (TX_TYPE == ttURITOKEN_CREATE_SELL_OFFER) {
+                if (URITOKEN_STORE_LOOKUP == 32) {
+                    if (foreignRenterURIToken_lookup < 0) {
+                        TRACESTR("URIToken already present in the store");
+                        rollback(SBUF("[ONGOING RENTALS]: URIToken is already in ongoing rental process"),
+                                 ERROR_URITOKEN_OCCUPIED);
+                    }
+                    //check if the rental termination rules has been fulfilled
+                    TRACEVAR(NUM_OF_RENTALS[0]);
+                    TRACEVAR(foreignRenterURIToken_lookup);
+                    if (foreignRenterURIToken_lookup == 32 && NUM_OF_RENTALS[0] > 0 &&
+                        deadline_val <= LEDGER_LAST_TIME_TS + LAST_CLOSED_LEDGER_BUFF) {
+                        TRACESTR("URIToken rental condition fulfilled. Token ready to be returned");
+                        accept(SBUF("[TX ACCEPTED]: URIToken return offer accepted"), 0);
+                    } else {
+                        TRACESTR("URIToken return conditions not fulfilled. Rental process has not finished yet.");
+                        rollback(SBUF("[ONGOING RENTALS]: URIToken is already in ongoing rental process"),
+                                 ERROR_URITOKEN_OCCUPIED);
+                    }
+                } else {
+                    TRACESTR("URIToken not present in the store. Ready to be rented.");
+                    accept(SBUF("[TX ACCEPTED]: URIToken rental start offer accepted"), 0);
+                }
             }
-            //check if the rental termination rules has been fulfilled
-            if (URITOKEN_STORE_LOOKUP == 32 && foreignRenterURIToken_lookup == 32 && NUM_OF_RENTALS[0] != 0 &&
-                deadline_val <= LEDGER_LAST_TIME_TS + LAST_CLOSED_LEDGER_BUFF) {
-                TRACESTR("URIToken rental condition fulfilled. Token ready to be returned");
-                accept(SBUF("[TX ACCEPTED]: URIToken return offer accepted"), 0);
-            } else {
-                TRACESTR("URIToken return conditions not fulfilled. Rental process has not finished yet.");
-                rollback(SBUF("[ONGOING RENTALS]: URIToken is already in ongoing rental process"),
-                         ERROR_URITOKEN_OCCUPIED);
-            }
-
         }
 
         if (TX_TYPE == ttURITOKEN_BUY) {
@@ -340,13 +385,34 @@ int64_t hook(uint32_t reserved) {
                     rollback(SBUF("Error: could not set state!"), 1);
                 }
                 TRACESTR("New NFTokenID saved to the store");
+                int64_t amount_in_drops = AMOUNT_TO_DROPS(rental_total_amount_val);
+                TRACEVAR(amount_in_drops);
+                TRACEHEX(amount_in_drops);
+                if(amount_in_drops < 0) {
+                    TRACESTR('[HOOK INTERNAL ERROR]: Could not transform amount to drops');
+                }else {
+                    uint8_t foreignAccForPayment[20];
+                    uint8_t account_param_name[] = {'F', 'O', 'R', 'E', 'I', 'G', 'N', 'A', 'C', 'C'};
+                    int64_t renterAccountId_lookup = otxn_param(SBUF(foreignAccForPayment), SBUF(account_param_name));
+                    TRACEHEX(foreignAccForPayment);
+                    // create a buffer to write the emitted transaction into
+                    unsigned char tx[PREPARE_PAYMENT_SIMPLE_SIZE];
+
+                    PREPARE_PAYMENT_SIMPLE(tx, amount_in_drops, foreignAccForPayment, 0, 0);
+
+                    // emit the transaction
+                    uint8_t emit_tx_hash[32];
+                    int64_t emit_result = emit(SBUF(emit_tx_hash), SBUF(tx));
+                    TRACEVAR(emit_result);
+                }
                 accept(SBUF("Tx accepted"), (uint64_t) (uintptr_t) 0);
             }
         }
     }
+
     accept(SBUF("Tx accepted"), (uint64_t) (uintptr_t) 0);
 
     _g(1, 1); // every hook needs to import guard function and use it at least once
-    // unreachable
+// unreachable
     return 0;
 }

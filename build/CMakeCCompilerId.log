@@ -1,0 +1,8 @@
+Read source bytes: 880 out of 880
+First pass start
+Section type: 1, Section len: 10, Section offset: 0xA
+Section type: 3, Section len: 3, Section offset: 0x16
+Function count: 2
+Func -1 is type 0
+Func 0 is type 0
+Hook/cbak has the wrong function signature. Must be int64_t (*) (uint32_t).
