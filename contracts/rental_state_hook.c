@@ -73,20 +73,20 @@ int64_t hook(uint32_t ctx) {
         rollback(SBUF("[ONGOING RENTALS]: Cannot burn URIToken which is in ongoing rental process"), 10);
     }
 
-    if (TX_TYPE == ttACCOUNT_DELETE || TX_TYPE == ttHOOK_SET) {
-        TRACESTR("Reading number of rentals in progress from state");
-        if (NUM_OF_RENTALS[0] > 0) {
-            rollback(SBUF("[ONGOING RENTALS]: cannot mutate hook, delete account or burn rented token"), 10);
-        } else if (NUM_OF_RENTALS[0] < 0) {
-            TRACESTR("No rentals on this account yet");
-        }
-        if (TX_TYPE == ttACCOUNT_DELETE) TRACESTR("[NO ONGOING RENTALS]: AccountDelete tx accepted");
-        if (TX_TYPE == ttACCOUNT_DELETE) TRACESTR("[NO ONGOING RENTALS]: SetHook tx accepted");
-        accept(SBUF("Tx accepted"), (uint64_t) (uintptr_t) 0);
-    }
+//    if (TX_TYPE == ttACCOUNT_DELETE || TX_TYPE == ttHOOK_SET) {
+//        TRACESTR("Reading number of rentals in progress from state");
+//        if (NUM_OF_RENTALS[0] > 0) {
+//            rollback(SBUF("[ONGOING RENTALS]: cannot mutate hook, delete account or burn rented token"), 10);
+//        } else if (NUM_OF_RENTALS[0] < 0) {
+//            TRACESTR("No rentals on this account yet");
+//        }
+//        if (TX_TYPE == ttACCOUNT_DELETE) TRACESTR("[NO ONGOING RENTALS]: AccountDelete tx accepted");
+//        if (TX_TYPE == ttACCOUNT_DELETE) TRACESTR("[NO ONGOING RENTALS]: SetHook tx accepted");
+//        accept(SBUF("Tx accepted"), (uint64_t) (uintptr_t) 0);
+//    }
 
     //Token owner accepted the return offer
-    if (TX_TYPE == ttURITOKEN_BUY && !is_tx_outcoming && URITOKEN_STORE_LOOKUP > 0 && NUM_OF_RENTALS[0] > 0) {
+    if (TX_TYPE == ttURITOKEN_BUY && URITOKEN_STORE_LOOKUP > 0 && NUM_OF_RENTALS[0] > 0) {
         TRACESTR("URIToken should be removed from the store");
         if (state_set(0, 0, SBUF(URITOKEN_TX_VALUE)) < 0) {
             rollback(SBUF("[INTERNAL HOOK STATE ERROR]:  Could not remove the URIToken from the state"),
@@ -197,11 +197,11 @@ int64_t hook(uint32_t ctx) {
         int64_t MIN_DEADLINE_TIMESTAMP = LEDGER_LAST_TIME_TS + LAST_CLOSED_LEDGER_BUFF + DAY_IN_SECONDS;
         TRACEVAR(MIN_DEADLINE_TIMESTAMP);
         TRACEVAR(foreignRenterURIToken_lookup)
-        if ((otxn_deadline_value < MIN_DEADLINE_TIMESTAMP && foreignRenterURIToken_lookup < 0) ||
-            (URITOKEN_STORE_LOOKUP > 0 && RENTAL_DEADLINE_TS_VALUE != otxn_deadline_value &&
-             foreignRenterURIToken_lookup > 0 && is_tx_outcoming)) {
-            INVALID_DEADLINE_TIME = 1;
-        }
+//        if ((otxn_deadline_value < MIN_DEADLINE_TIMESTAMP && foreignRenterURIToken_lookup < 0) ||
+//            (URITOKEN_STORE_LOOKUP > 0 && RENTAL_DEADLINE_TS_VALUE != otxn_deadline_value &&
+//             foreignRenterURIToken_lookup > 0 && is_tx_outcoming)) {
+//            INVALID_DEADLINE_TIME = 1;
+//        }
 
         //CHECKING IF rental_total_amount is valid
         uint8_t otxn_field_amount_value[8];
@@ -228,15 +228,14 @@ int64_t hook(uint32_t ctx) {
                         rollback(SBUF("[ONGOING RENTALS]: URIToken is already in ongoing rental process"),
                                  ERROR_URITOKEN_OCCUPIED);
                     }
-                    //check if the rental termination rules has been fulfilled
                     TRACEVAR(NUM_OF_RENTALS[0]);
                     TRACEVAR(foreignRenterURIToken_lookup);
                     TRACEVAR(LEDGER_LAST_TIME_TS + LAST_CLOSED_LEDGER_BUFF)
-                    if (RENTAL_DEADLINE_TS_VALUE > LEDGER_LAST_TIME_TS + LAST_CLOSED_LEDGER_BUFF) {
-                        TRACESTR("URIToken rental condition in progress.");
-                        rollback(SBUF("[ONGOING RENTALS]: URIToken is already in ongoing rental process"),
-                                 ERROR_URITOKEN_OCCUPIED);
-                    }
+//                    if (RENTAL_DEADLINE_TS_VALUE > LEDGER_LAST_TIME_TS + LAST_CLOSED_LEDGER_BUFF) {
+//                        TRACESTR("URIToken rental condition in progress.");
+//                        rollback(SBUF("[ONGOING RENTALS]: URIToken is already in ongoing rental process"),
+//                                 ERROR_URITOKEN_OCCUPIED);
+//                    }
                     if (foreignRenterURIToken_lookup > 0 && NUM_OF_RENTALS[0] > 0) {
                         TRACESTR("URIToken rental condition fulfilled. Token ready to be returned");
                         accept(SBUF("[TX ACCEPTED]: URIToken return offer accepted"), 0);
